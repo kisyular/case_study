@@ -81,7 +81,7 @@ class AndrewAdvancedProcessor:
         days_transformations = {}
         
         for var in existing_days:
-            print(f"\\n🔍 Processing {var}:")
+            print(f"\n🔍 Processing {var}:")
             
             # Basic statistics
             stats_info = self.df[var].describe()
