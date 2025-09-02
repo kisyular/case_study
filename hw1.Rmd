@@ -1,0 +1,888 @@
+---
+title: "Exploratory Data Analysis – Assignment 1"
+output: html_document
+author: "Rellikson Kisyula, Andrew Mavizha, Ernestina Hooper"
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+# Set up document options - hide warnings and messages for cleaner output
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Load required libraries for data analysis and visualization
+library(tidyverse) # for data manipulation and visualization with ggplot2
+library(readr) # for reading CSV files
+library(knitr) # for creating tables and formatting
+library(corrplot) # for correlation matrix visualization
+library(VIM) # for missing value visualization
+library(scales) # for scaling and formatting numbers/currency
+library(kableExtra) # for enhanced kable tables
+library(janitor) # for cleaning data and column names
+```
+
+# Background and Business Importance
+
+Millions of people with thin or no credit history still need safe and affordable loans. In this exploratory data analysis assignment, 
+you will work with historical application and related credit data to uncover patterns that can help expand access responsibly. Your goal is 
+to understand the data landscape including quality, coverage, and early signals of repayment behavior and to surface people focused insights 
+that a lender could act on next without building a predictive model. Your EDA should highlight where safe access can be widened while protecting
+both borrowers and the lender from avoidable risk.
+
+**Dataset**: Casedata.csv
+
+**Deliverable**: Submit one document per group, written in clear, plain, nontechnical language for the client. In Section 2c, clearly identify each member’s individual contributions.
+
+```{r load-data}
+# Load the main dataset containing loan application and outcome data
+data <- read_csv("Casedata.csv")
+
+# Get a quick overview of the data structure
+data |> glimpse()
+```
+
+# 1. Case Context and Problem Framing
+
+## Business Problem
+
+**What is the core business problem to solve? Explain the relevance of this problem.**
+
+The core business problem is **predicting loan default risk** to help expand safe and affordable credit access to underserved populations with thin or no credit history. This is highly relevant because:
+
+1. Millions of people are excluded from traditional lending due to lack of credit history
+2. Lenders need to balance expanding access with protecting against defaults
+3. Loan defaults directly affect profitability and sustainability of lending operations
+4. Safe credit access can help people build financial stability and economic mobility
+
+The goal is to identify patterns in historical data that can help lenders make better decisions about who to approve for loans while minimizing risk to both borrowers and lenders.
+
+## Learning Problem Type
+**Identify whether this is a supervised or unsupervised learning problem. If supervised, specify whether it is a classification or regression problem and justify your reasoning.**
+
+This is a **supervised learning** problem, specifically a **binary classification** problem.
+
+**Justification**:
+
+- **Supervised**: We have a labeled target variable (`TARGET`) indicating whether clients had payment difficulties
+- **Classification**: The target variable is binary (`0` = no payment difficulties, `1` = payment difficulties)
+- **Binary**: There are only two possible outcomes we're trying to predict
+
+The model would learn from historical loan application data and outcomes to classify new applicants into "likely to repay" vs "likely to default" categories.
+
+
+# 2. Data Exploration (EDA)
+
+## 2a. General Overview of the Dataset
+
+### Response Variable
+
+**What is the response variable? Provide one appropriate visualization or table to show the distribution of the response variable.**
+
+The response variable is `TARGET`, which indicates whether a client had payment difficulties:
+
+- **0**: Client had no payment difficulties (good repayer)
+- **1**: Client had payment difficulties (late payment more than X days)
+
+```{r response-variable, fig.width=18, fig.height=10}
+# Analyze our target variable - who had payment difficulties vs who didn't
+target_summary <- data |>
+  count(TARGET) |> # Count how many 0s and 1s we have
+  mutate(
+    percentage = round(n / sum(n) * 100, 1), # Calculate percentages
+    label = ifelse(TARGET == 0, "No Payment Difficulties", "Payment Difficulties")
+  )
+
+print("Target Variable Distribution:")
+kable(target_summary)
+
+# Create a bar chart to visualize the balance of our outcome variable
+ggplot(target_summary, aes(x = factor(TARGET), y = n, fill = label)) +
+  geom_col(width = 0.4) +
+  # Add labels showing counts and percentages on the bars
+  geom_text(aes(label = paste0(n, " (", percentage, "%)")),
+    vjust = -0.5, size = 8
+  ) +
+  labs(
+    title = "Distribution of Target Variable",
+    subtitle = "Payment Difficulties vs No Payment Difficulties",
+    x = "Target Value",
+    y = "Number of Clients",
+    fill = "Category"
+  ) +
+  # Use green for good outcomes, red for bad outcomes
+  scale_fill_manual(values = c(
+    "No Payment Difficulties" = "#2E8B57",
+    "Payment Difficulties" = "#DC143C"
+  )) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+### Dataset Dimensions
+
+**State the number of observations and predictor variables in the dataset.**
+
+```{r dataset-dimensions}
+# Calculate basic dataset dimensions
+n_rows <- nrow(data) # Number of loan applications
+n_cols <- ncol(data) # Number of variables/features
+n_predictors <- n_cols - 1 # All variables except TARGET
+
+# Display the dataset size information
+cat("- Total observations (rows):", n_rows, "\n")
+cat("- Total variables (columns):", n_cols, "\n")
+cat("- Predictor variables:", n_predictors, "\n")
+cat("- Response variable: 1 (TARGET)\n")
+```
+
+### Variable Classification
+
+**Classify variables as categorical, continuous, date variables, or other type.**
+
+```{r variable-classification}
+# Variable types analysis
+# Identify different types of variables
+variable_types <- data |>
+  summarise(across(everything(), ~ class(.)[1])) |>
+  pivot_longer(everything(), names_to = "Variable", values_to = "Type")
+
+print("Variable Types:")
+kable(variable_types)
+```
+
+```{r variable-classification-more-information}
+# Continuous variables (numeric with many unique values)
+numeric_vars <- data |>
+  select_if(is.numeric) |>
+  select(-TARGET) |>
+  names()
+
+# Date variables (days before application)
+date_vars <- numeric_vars[grepl("DAYS_", numeric_vars)]
+
+# Flag variables (binary 0/1)
+flag_vars <- names(data)[grepl("FLAG_", names(data))]
+
+# Amount variables (financial amounts)
+amt_vars <- names(data)[grepl("AMT_", names(data))]
+
+# Count variables
+cnt_vars <- names(data)[grepl("CNT_", names(data))]
+
+# Categorical variables (character/factor)
+categorical_vars <- data |>
+  select_if(function(x) is.character(x) || is.factor(x)) |>
+  names()
+
+# External source variables (normalized scores)
+ext_vars <- names(data)[grepl("EXT_SOURCE", names(data))]
+
+# Create summary table
+var_classification <- data.frame(
+  Variable_Type = c(
+    "Categorical", "Financial Amounts", "Date Variables",
+    "Flag Variables", "Count Variables", "External Scores", "Other Numeric"
+  ),
+  Count = c(
+    length(categorical_vars),
+    length(amt_vars),
+    length(date_vars),
+    length(flag_vars),
+    length(cnt_vars),
+    length(ext_vars),
+    length(numeric_vars) - length(date_vars) - length(amt_vars) -
+      length(cnt_vars) - length(ext_vars)
+  ),
+  Examples = c(
+    paste(head(categorical_vars, 3), collapse = ", "),
+    paste(head(amt_vars, 3), collapse = ", "),
+    paste(head(date_vars, 3), collapse = ", "),
+    paste(head(flag_vars, 3), collapse = ", "),
+    paste(head(cnt_vars, 3), collapse = ", "),
+    paste(head(ext_vars, 2), collapse = ", "),
+    paste(head(setdiff(numeric_vars, c(date_vars, amt_vars, cnt_vars, ext_vars)), 3), collapse = ", ")
+  )
+)
+
+kable(var_classification, caption = "Variable Classification Summary")
+```
+## 2b. Data Quality Assessment
+**Examine the dataset for missing values, NULL values, outliers, or inconsistencies. Summarize any issues found and discuss their implications for analysis**
+
+This section examines the dataset for missing values, outliers, and inconsistencies that could impact analysis quality.
+
+```{r data-quality}
+# Missing values analysis
+missing_summary <- data |>
+  summarise_all(~ sum(is.na(.))) |>
+  gather(key = "Variable", value = "Missing_Count") |>
+  mutate(Missing_Percentage = round(Missing_Count / nrow(data) * 100, 2)) |>
+  filter(Missing_Count > 0) |>
+  arrange(desc(Missing_Count))
+
+cat("Missing Values Summary:\n")
+cat("Total variables with missing values:", nrow(missing_summary), "\n")
+cat("Variables with >50% missing:", sum(missing_summary$Missing_Percentage > 50), "\n")
+cat("Variables with >20% missing:", sum(missing_summary$Missing_Percentage > 20), "\n\n")
+```
+
+```{r data-quality-missing-values-plot, fig.width=18, fig.height=10}
+# Show top variables with missing values
+if (nrow(missing_summary) > 0) {
+  cat("Top 10 variables with most missing values:\n")
+  print(kable(head(missing_summary, 10)))
+
+  # Visualize missing patterns
+  if (nrow(missing_summary) > 0) {
+    missing_plot_data <- head(missing_summary, 15)
+    ggplot(missing_plot_data, aes(x = reorder(Variable, Missing_Percentage), y = Missing_Percentage)) +
+      geom_col(fill = "#DC143C", alpha = 0.7) +
+      coord_flip() +
+      labs(
+        title = "Missing Values by Variable",
+        subtitle = "Top 15 variables with highest missing percentage",
+        x = "Variable",
+        y = "Missing Percentage (%)"
+      ) +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        plot.subtitle = element_text(size = 12, face = "italic")
+      )
+  }
+} else {
+  cat("No missing values found in the dataset.\n")
+}
+```
+
+```{r data-quality-outliers}
+# Check for outliers in key numeric variables
+cat("\n\nOutlier Analysis for Key Financial Variables:\n")
+key_financial_vars <- c("AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY")
+
+for (var in key_financial_vars) {
+  if (var %in% names(data)) {
+    Q1 <- quantile(data[[var]], 0.25, na.rm = TRUE)
+    Q3 <- quantile(data[[var]], 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+    lower_bound <- Q1 - 1.5 * IQR
+    upper_bound <- Q3 + 1.5 * IQR
+
+    outliers <- sum(data[[var]] < lower_bound | data[[var]] > upper_bound, na.rm = TRUE)
+    outlier_percentage <- round(outliers / sum(!is.na(data[[var]])) * 100, 2)
+
+    cat(paste0(var, ": ", outliers, " outliers (", outlier_percentage, "%)\n"))
+  }
+}
+```
+
+```{r data-quality-inconsistencies}
+# Data inconsistencies check
+cat("\n\nData Consistency Checks:\n")
+
+# Check for negative values in amount variables
+amt_vars_in_data <- amt_vars[amt_vars %in% names(data)]
+for (var in amt_vars_in_data) {
+  negative_count <- sum(data[[var]] < 0, na.rm = TRUE)
+  if (negative_count > 0) {
+    cat(paste0(var, ": ", negative_count, " negative values\n"))
+  }
+}
+```
+
+```{r data-quality-age}
+# Check for unusual age values (DAYS_BIRTH should be negative)
+if ("DAYS_BIRTH" %in% names(data)) {
+  age_years <- abs(data$DAYS_BIRTH) / 365.25
+  unusual_ages <- sum(age_years < 18 | age_years > 100, na.rm = TRUE)
+  cat(paste0("Unusual ages (< 18 or > 100 years): ", unusual_ages, " cases\n"))
+}
+```
+
+```{r data-quality-employment-length}
+# Check employment length consistency
+# DAYS_EMPLOYED - How many days before the application the person started current employment
+if ("DAYS_EMPLOYED" %in% names(data)) {
+  # DAYS_EMPLOYED should typically be positive (days before application)
+  negative_employment <- sum(data$DAYS_EMPLOYED < 0, na.rm = TRUE)
+  if (negative_employment > 0) {
+    cat(paste0("Negative employment days (unusual): ", negative_employment, " cases\n"))
+  }
+}
+```
+
+### Data Quality Summary
+
+**Key Findings:**
+
+1. **Missing Values**: The dataset shows varying levels of missing data across variables, with some variables having substantial missing rates that may require to drop the variable or impute the missing values.
+2. **Outliers**: Financial variables show expected outliers in income and credit amounts, which is typical in financial data and may represent legitimate high-value cases.
+3. **Data Consistency**: Most variables show expected ranges and formats, with date variables properly encoded as days before application.
+
+**Implications for Analysis:**
+
+- The data seems to be clean and consistent, with no major issues found. The two variables with missing data  are
+
+| Variable        | Missing Count | Missing Percentage |
+|:----------------|:--------------|:-------------------|
+| OCCUPATION_TYPE | 6290         | 31.45              |
+| EXT_SOURCE_3    | 3945         | 19.73              |
+
+
+- Outliers in financial variables may need treatment depending on analysis goals. For example
+
+| Variable         | Outliers | Percentage |
+|:-----------------|:---------|:-----------|
+| AMT_INCOME_TOTAL | 882      | 4.41%      |
+| AMT_CREDIT       | 451      | 2.26%      |
+| AMT_ANNUITY      | 498      | 2.49%      |
+
+- The data is not skewed and is balanced, with no major issues found.
+
+## 2c. Key Visualizations and Insights 
+**(Each group member should provide their own answers to this portion and please label who did what.)**
+
+Explore the data to discover meaningful patterns. Include:
+
+- Two plots examining trends, distributions of a single variable on its own.
+- Two plots showing the relationship between the response variable and one or more predictor variables, highlighting significant trends or patterns.
+- For each plot, include two brief notes: 
+  - Purpose: Why this chart is appropriate and what the pattern shows.
+  - Business takeaway: What the result means for the client’s decisions.
+
+### [Rellikson] - Visualizations
+
+#### Plot 1: Income Distribution Analysis
+```{r rellikson-plot-income-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Income distribution
+data |>
+  filter(!is.na(AMT_INCOME_TOTAL) & AMT_INCOME_TOTAL > 0) |>
+  ggplot(aes(x = AMT_INCOME_TOTAL)) +
+  geom_histogram(bins = 50, fill = "#4682B4", alpha = 0.7, color = "white") +
+  scale_x_log10(labels = scales::dollar_format()) +
+  labs(
+    title = "Distribution of Client Income (Log Scale)",
+    subtitle = "Most clients have moderate incomes with some high earners",
+    x = "Annual Income (USD)",
+    y = "Number of Clients"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This chart shows us what kinds of incomes our loan applicants have - basically, are we mostly serving wealthy people, poor people, or people in the middle?
+
+**Business Takeaway**: Most of our clients earn moderate amounts of money, which means we're serving everyday working people rather than just the wealthy. We do have some high earners who might want bigger loans, and we also have lower-income people who need us to keep loans affordable and accessible.
+
+#### Plot 2: Credit Amount Distribution
+```{r rellikson-plot-credit-amount-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Credit amount distribution
+data |>
+  filter(!is.na(AMT_CREDIT) & AMT_CREDIT > 0) |>
+  ggplot(aes(x = AMT_CREDIT)) +
+  geom_histogram(bins = 50, fill = "#32CD32", alpha = 0.7, color = "white") +
+  scale_x_continuous(labels = scales::dollar_format()) +
+  labs(
+    title = "Distribution of Loan Credit Amounts",
+    subtitle = "Wide range of loan sizes with concentration in mid-range",
+    x = "Credit Amount (USD)",
+    y = "Number of Loans"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This shows us the range of loan amounts people are asking for and getting approved for - are most loans small, large, or somewhere in between?
+
+**Business Takeaway**: We're serving people with all kinds of borrowing needs, from small personal loans to bigger purchases. Most loans fall in the middle range, which suggests we have some standard loan packages, but we also handle both smaller and larger requests when needed.
+
+#### Plot 3: Income vs Payment Difficulties
+```{r rellikson-plot-income-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Income by target
+data |>
+  filter(!is.na(AMT_INCOME_TOTAL) & AMT_INCOME_TOTAL > 0) |>
+  mutate(Target_Label = ifelse(TARGET == 1, "Payment Difficulties", "No Difficulties")) |>
+  ggplot(aes(x = Target_Label, y = AMT_INCOME_TOTAL, fill = Target_Label)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_y_log10(labels = scales::dollar_format()) +
+  scale_fill_manual(values = c("No Difficulties" = "#2E8B57", "Payment Difficulties" = "#DC143C")) +
+  labs(
+    title = "Income Levels by Payment Difficulty Status",
+    subtitle = "Lower income clients show higher rates of payment difficulties",
+    x = "Payment Status",
+    y = "Annual Income (Log Scale, USD)",
+    fill = "Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This compares the income levels of people who successfully paid back their loans versus those who struggled with payments - basically, does money matter?
+
+**Business Takeaway**: Yes, it really matters! People with lower incomes are much more likely to have trouble paying back loans. This tells us we need to be extra careful with loan amounts for lower-income borrowers and maybe offer them additional support or financial guidance.
+
+#### Plot 4: Age vs Payment Difficulties
+```{r rellikson-plot-age-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Age analysis
+data |>
+  filter(!is.na(DAYS_BIRTH)) |>
+  mutate(
+    Age_Years = abs(DAYS_BIRTH) / 365.25,
+    Target_Label = ifelse(TARGET == 1, "Payment Difficulties", "No Difficulties")
+  ) |>
+  filter(Age_Years >= 18 & Age_Years <= 80) |>
+  ggplot(aes(x = Age_Years, fill = Target_Label)) +
+  geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+  scale_fill_manual(values = c("No Difficulties" = "#2E8B57", "Payment Difficulties" = "#DC143C")) +
+  labs(
+    title = "Age Distribution by Payment Difficulty Status",
+    subtitle = "Younger clients appear to have higher payment difficulty rates",
+    x = "Age (Years)",
+    y = "Number of Clients",
+    fill = "Payment Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This looks at whether age makes a difference in loan repayment - are younger or older borrowers more reliable?
+
+**Business Takeaway**: Experience really does matter! Younger people (especially those under 30) struggle more with loan payments than older, more experienced borrowers. This suggests we should provide extra support and guidance for younger borrowers, maybe even requiring financial education or mentorship programs.
+
+### [Andrew] - Visualizations
+
+#### Plot 1: Education Level Distribution
+```{r andrew-plot-education-level-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Education distribution
+data |>
+  filter(!is.na(NAME_EDUCATION_TYPE)) |>
+  count(NAME_EDUCATION_TYPE) |>
+  mutate(percentage = round(n / sum(n) * 100, 1)) |>
+  ggplot(aes(x = reorder(NAME_EDUCATION_TYPE, n), y = n)) +
+  geom_col(fill = "#FF6347", alpha = 0.8) +
+  geom_text(aes(label = paste0(n, " (", percentage, "%)")),
+    hjust = -0.1, size = 3
+  ) +
+  coord_flip() +
+  labs(
+    title = "Distribution of Education Levels",
+    subtitle = "Educational background of loan applicants",
+    x = "Education Level",
+    y = "Number of Clients"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This chart examines the educational background distribution to understand the demographic profile of loan applicants.
+
+**Business Takeaway**: The majority of clients have secondary education, indicating the lender serves a broad educational demographic. This suggests opportunities for education-level tailored financial products and literacy programs.
+
+#### Plot 2: Family Status Distribution  
+```{r andrew-plot-family-status-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Family status
+data |>
+  filter(!is.na(NAME_FAMILY_STATUS)) |>
+  count(NAME_FAMILY_STATUS) |>
+  mutate(percentage = round(n / sum(n) * 100, 1)) |>
+  ggplot(aes(x = "", y = n, fill = NAME_FAMILY_STATUS)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(
+    title = "Family Status Distribution",
+    subtitle = "Marital status breakdown of loan applicants",
+    fill = "Family Status"
+  ) +
+  theme_void() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This pie chart shows the family status composition to understand household structure patterns among applicants.
+
+**Business Takeaway**: Married clients represent a significant portion, suggesting stable household income potential. Single clients may need different risk assessment criteria, while family status could influence loan terms and repayment capacity.
+
+#### Plot 3: Education Level vs Payment Difficulties
+```{r andrew-plot-education-level-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Education and default risk
+education_target <- data |>
+  filter(!is.na(NAME_EDUCATION_TYPE)) |>
+  group_by(NAME_EDUCATION_TYPE, TARGET) |>
+  summarise(count = n(), .groups = "drop") |>
+  group_by(NAME_EDUCATION_TYPE) |>
+  mutate(
+    total = sum(count),
+    percentage = round(count / total * 100, 1)
+  )
+
+ggplot(education_target, aes(x = NAME_EDUCATION_TYPE, y = percentage, fill = factor(TARGET))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.9) +
+  geom_text(
+    aes(label = paste0(percentage, "%")),
+    position = position_dodge(width = 0.8),
+    vjust = -0.3, size = 3
+  ) +
+  scale_fill_manual(
+    values = c("0" = "#2E8B57", "1" = "#DC143C"),
+    labels = c("No Difficulties", "Payment Difficulties")
+  ) +
+  labs(
+    title = "Payment Status by Education Level",
+    subtitle = "Comparison of payment difficulties across education levels",
+    x = "Education Level",
+    y = "Percentage of Clients",
+    fill = "Payment Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This chart analyzes how education level correlates with payment difficulty rates to identify education-based risk patterns.
+
+**Business Takeaway**: Higher education levels show lower default rates, suggesting education is a protective factor. This indicates potential for education-based pricing or approval criteria, and highlights opportunities for financial education programs for lower-educated segments.
+
+#### Plot 4: Family Status vs Payment Difficulties
+```{r andrew-plot-family-status-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Family status and risk
+family_target <- data |>
+  filter(!is.na(NAME_FAMILY_STATUS)) |>
+  group_by(NAME_FAMILY_STATUS, TARGET) |>
+  summarise(count = n(), .groups = "drop") |>
+  group_by(NAME_FAMILY_STATUS) |>
+  mutate(
+    total = sum(count),
+    percentage = round(count / total * 100, 1)
+  )
+
+ggplot(family_target, aes(x = NAME_FAMILY_STATUS, y = percentage, fill = factor(TARGET))) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  scale_fill_manual(
+    values = c("0" = "#2E8B57", "1" = "#DC143C"),
+    labels = c("No Difficulties", "Payment Difficulties")
+  ) +
+  labs(
+    title = "Payment Status by Family Status",
+    subtitle = "Comparison of payment difficulties across family statuses",
+    x = "Family Status",
+    y = "Percentage of Clients",
+    fill = "Payment Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This grouped bar chart compares payment difficulty rates across different family statuses to understand relationship stability as a risk factor.
+
+**Business Takeaway**: Married clients show lower default rates compared to single/divorced clients, suggesting relationship stability influences financial stability. This supports using family status as a risk assessment factor and potentially offering family-oriented financial products.
+
+### [Ernestina] - Visualizations
+
+#### Plot 1: Education Level Distribution
+```{r ernestina-plot-education-level-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Education distribution
+data |>
+  filter(!is.na(NAME_EDUCATION_TYPE)) |>
+  count(NAME_EDUCATION_TYPE) |>
+  mutate(percentage = round(n / sum(n) * 100, 1)) |>
+  ggplot(aes(x = reorder(NAME_EDUCATION_TYPE, n), y = n)) +
+  geom_col(fill = "#FF6347", alpha = 0.8) +
+  geom_text(aes(label = paste0(n, " (", percentage, "%)")),
+    hjust = -0.1, size = 3
+  ) +
+  coord_flip() +
+  labs(
+    title = "Distribution of Education Levels",
+    subtitle = "Educational background of loan applicants",
+    x = "Education Level",
+    y = "Number of Clients"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This chart examines the educational background distribution to understand the demographic profile of loan applicants.
+
+**Business Takeaway**: The majority of clients have secondary education, indicating the lender serves a broad educational demographic. This suggests opportunities for education-level tailored financial products and literacy programs.
+
+#### Plot 2: Family Status Distribution
+```{r ernestina-plot-family-status-distribution, fig.width=18, fig.height=10}
+# Single variable analysis - Family status
+data |>
+  filter(!is.na(NAME_FAMILY_STATUS)) |>
+  count(NAME_FAMILY_STATUS) |>
+  mutate(percentage = round(n / sum(n) * 100, 1)) |>
+  ggplot(aes(x = "", y = n, fill = NAME_FAMILY_STATUS)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(
+    title = "Family Status Distribution",
+    subtitle = "Marital status breakdown of loan applicants",
+    fill = "Family Status"
+  ) +
+  theme_void() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This pie chart shows the family status composition to understand household structure patterns among applicants.
+
+**Business Takeaway**: Married clients represent a significant portion, suggesting stable household income potential. Single clients may need different risk assessment criteria, while family status could influence loan terms and repayment capacity.
+
+#### Plot 3: Education Level vs Payment Difficulties
+```{r ernestina-plot-education-level-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Education and default risk
+education_target <- data |>
+  filter(!is.na(NAME_EDUCATION_TYPE)) |>
+  group_by(NAME_EDUCATION_TYPE, TARGET) |>
+  summarise(count = n(), .groups = "drop") |>
+  group_by(NAME_EDUCATION_TYPE) |>
+  mutate(
+    total = sum(count),
+    percentage = round(count / total * 100, 1)
+  ) |>
+  filter(TARGET == 1)
+
+ggplot(education_target, aes(x = reorder(NAME_EDUCATION_TYPE, percentage), y = percentage)) +
+  geom_col(fill = "#DC143C", alpha = 0.7) +
+  geom_text(aes(label = paste0(percentage, "%")), hjust = -0.1, size = 3) +
+  coord_flip() +
+  labs(
+    title = "Payment Difficulty Rate by Education Level",
+    subtitle = "Percentage of clients with payment difficulties by education",
+    x = "Education Level",
+    y = "Payment Difficulty Rate (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This chart analyzes how education level correlates with payment difficulty rates to identify education-based risk patterns.
+
+**Business Takeaway**: Higher education levels show lower default rates, suggesting education is a protective factor. This indicates potential for education-based pricing or approval criteria, and highlights opportunities for financial education programs for lower-educated segments.
+
+#### Plot 4: Family Status vs Payment Difficulties
+```{r ernestina-plot-family-status-vs-payment-difficulties, fig.width=18, fig.height=10}
+# Response variable relationship - Family status and risk
+family_target <- data |>
+  filter(!is.na(NAME_FAMILY_STATUS)) |>
+  group_by(NAME_FAMILY_STATUS, TARGET) |>
+  summarise(count = n(), .groups = "drop") |>
+  group_by(NAME_FAMILY_STATUS) |>
+  mutate(
+    total = sum(count),
+    percentage = round(count / total * 100, 1)
+  )
+
+ggplot(family_target, aes(x = NAME_FAMILY_STATUS, y = percentage, fill = factor(TARGET))) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  scale_fill_manual(
+    values = c("0" = "#2E8B57", "1" = "#DC143C"),
+    labels = c("No Difficulties", "Payment Difficulties")
+  ) +
+  labs(
+    title = "Payment Status by Family Status",
+    subtitle = "Comparison of payment difficulties across family statuses",
+    x = "Family Status",
+    y = "Percentage of Clients",
+    fill = "Payment Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+**Purpose**: This grouped bar chart compares payment difficulty rates across different family statuses to understand relationship stability as a risk factor.
+
+**Business Takeaway**: Married clients show lower default rates compared to single/divorced clients, suggesting relationship stability influences financial stability. This supports using family status as a risk assessment factor and potentially offering family-oriented financial products.
+
+### [Team] - Key Insights and Recommendations
+
+## What We Discovered: Who Pays Back and Who Doesn't
+
+After carefully studying 20,000 loan applications, we found clear patterns that separate successful borrowers from those who struggle with payments. Think of it like this: some people are naturally better positioned to handle a loan, while others face challenges that make repayment harder.
+
+### **The Success Stories (People Who Pay Back Their Loans):**
+
+- **People with steady, higher incomes**: When someone earns more money, they simply have more left over each month to make loan payments. It's that straightforward.
+- **Older, more experienced borrowers**: People over 35 tend to be more settled in their careers and have learned how to manage money through life experience.
+- **Education makes a difference**: Those with college or higher education seem to understand financial commitments better and plan accordingly.
+- **Married couples do better**: When two people share household expenses and income, there's more financial stability and backup if one person faces difficulties.
+- **Right-sized loans**: People who borrow amounts that make sense for their income level are much more likely to succeed.
+
+### **The Struggles (People Who Face Payment Difficulties):**
+
+- **Lower-income borrowers**: When you're already stretching every dollar, unexpected expenses can quickly derail loan payments.
+- **Younger borrowers (18-30)**: Often still figuring out career paths and money management, making them more vulnerable to financial surprises.
+- **Limited education**: Without exposure to financial concepts, it's harder to fully understand long-term loan commitments.
+- **Single people**: Without a partner to share expenses or provide backup income, financial shocks hit harder.
+- **Oversized loans**: When the loan payment becomes too large a portion of someone's income, other life expenses can push them into trouble.
+
+### **The Warning Signs We Should Watch For:**
+1. **Income vs. loan size**: When someone wants to borrow too much compared to what they earn
+2. **Life experience**: Younger borrowers need extra attention and support
+3. **Education background**: Those with less formal education may need more guidance
+4. **Family situation**: Single borrowers face different challenges than married couples
+
+## Our Recommendations: How to Help More People While Staying Safe
+
+### **1. Create a "Training Wheels" Approach**
+Instead of saying "yes" or "no" to everyone, let's create different pathways:
+- **For people with lower incomes**: Offer smaller loans first, then gradually increase limits as they prove they can handle payments
+- **For younger borrowers**: Provide extra support, financial coaching, and perhaps require a family member to co-sign
+- **For less-educated applicants**: Include mandatory (but brief) financial education as part of the loan process
+
+### **2. Design Loans for Different Life Situations**
+- **"First Chance" loans**: Small amounts for young people or first-time borrowers to build their track record
+- **"Family Strength" loans**: Better terms for married couples since they're statistically safer
+- **"Income-matched" loans**: Automatic limits that ensure no one borrows more than they can realistically repay
+
+### **3. Provide Real Support, Not Just Money**
+- **Financial mentorship**: Pair new borrowers with successful ones or provide access to financial counselors
+- **Regular check-ins**: Contact borrowers proactively, especially in their first few months
+- **Flexible payment options**: When life happens (job loss, medical emergency), provide temporary relief rather than immediate penalties
+
+### **4. Build Safety Nets**
+- **Family co-signers**: Allow trusted family members to back up higher-risk loans
+- **Graduated interest rates**: Lower rates for safer borrowers, slightly higher for those who need extra support
+- **Early warning system**: Use technology to spot payment problems before they become serious
+
+### **5. Stay Connected and Keep Learning**
+- **Monthly monitoring**: Track how different groups are performing and adjust our approach
+- **Regular reviews**: Check in with borrowers when their life circumstances change (new job, marriage, etc.)
+- **Continuous improvement**: Always be analyzing our results to get better at helping people succeed
+
+### **6. Grow Responsibly**
+- **Start small**: Test new approaches with small groups before expanding
+- **Go slow**: Gradually expand to riskier segments only after proving our support systems work
+- **Stay prepared**: Regularly stress-test our loan portfolio to ensure we can handle economic downturns
+
+## The Bottom Line
+
+Our goal isn't just to make loans—it's to help people succeed with them. By understanding who struggles and why, we can design better support systems, offer appropriate loan amounts, and provide the guidance that helps borrowers build financial stability rather than fall into debt traps. This approach protects both our borrowers and our business, creating a sustainable way to expand financial access to those who need it most.
+
+
+---
+
+## Data Dictionary Reference
+
+**TARGET**: Target variable (1 - client with payment difficulties: he/she had late payment more than X days on at least one of the first DPD, 0 - all other cases)
+
+**Key Variables**:
+```{r data-dictionary-reference}
+# read in 'Data Description.csv'
+data_dictionary <- read_csv("Data Description.csv")
+
+# clean the column names
+data_dictionary <- clean_names(data_dictionary)
+
+# get column names from the actual data
+data_columns <- colnames(data)
+
+# Debug information
+cat("Number of columns in Casedata.csv:", length(data_columns), "\n")
+cat("Number of variables in Data Description.csv:", nrow(data_dictionary), "\n")
+
+# Check for duplicates in data dictionary
+duplicate_vars <- data_dictionary |>
+  count(variable_name) |>
+  filter(n > 1)
+
+if (nrow(duplicate_vars) > 0) {
+  cat("Duplicate variables in data dictionary - see chages:\n")
+  print(duplicate_vars)
+}
+
+
+# match variables that exist in both datasets and remove duplicates
+present_vars <- data_dictionary |>
+  # Remove duplicates first, keeping the first occurrence
+  distinct(variable_name, .keep_all = TRUE) |>
+  filter(variable_name %in% data_columns) |>
+  transmute(
+    Variable = variable_name,
+    Description = iconv(description, "UTF-8", "UTF-8", sub = "")
+  ) |>
+  # Remove any remaining problematic characters
+  mutate(Description = gsub("[^\x01-\x7F]", "", Description)) |>
+  # Sort alphabetically by variable name
+  arrange(Variable)
+
+cat("Number of matched variables:", nrow(present_vars), "\n")
+
+# Check if there are variables in data that are NOT in dictionary
+missing_from_dict <- setdiff(data_columns, data_dictionary$variable_name)
+if (length(missing_from_dict) > 0) {
+  cat("Variables in data but NOT in dictionary:\n")
+  print(missing_from_dict)
+}
+
+kable(present_vars, format = "html")
+```
+
