@@ -1,0 +1,45 @@
+TARGET,"Target variable (1 - client with payment difficulties: he/she had late payment more than X days on at least one of the first Y installments of the loan in our sample, 0 - all other cases)",
+NAME_CONTRACT_TYPE,Identification if loan is cash or revolving,
+NAME_CONTRACT_TYPE,"Contract product type (Cash loan, consumer loan [POS] ,...) of the previous application",
+CODE_GENDER,Gender of the client, - protected attribute
+FLAG_OWN_CAR,Flag if the client owns a car,
+FLAG_OWN_REALTY,Flag if client owns a house or flat,
+CNT_CHILDREN,Number of children the client has,
+AMT_INCOME_TOTAL,Income of the client,
+AMT_CREDIT,Credit amount of the loan,
+NAME_INCOME_TYPE,"Clients income type (businessman, working, maternity leave,)",
+NAME_EDUCATION_TYPE,Level of highest education the client achieved,
+NAME_FAMILY_STATUS,Family status of the client,
+NAME_HOUSING_TYPE,"What is the housing situation of the client (renting, living with parents, ...)",
+NAME_EDUCATION_TYPE,Level of highest education the client achieved,
+NAME_HOUSING_TYPE,"What is the housing situation of the client (renting, living with parents, ...)",
+REGION_POPULATION_RELATIVE,Normalized population of region where client lives (higher number means the client lives in more populated region),normalized 
+DAYS_BIRTH,Client's age in days at the time of application,time only relative to the application
+DAYS_EMPLOYED,How many days before the application the person started current employment,time only relative to the application
+DAYS_REGISTRATION,How many days before the application did client change his registration,time only relative to the application
+DAYS_ID_PUBLISH,How many days before the application did client change the identity document with which he applied for the loan,time only relative to the application
+FLAG_PHONE,"Did client provide home phone (1=YES, 0=NO)",
+OCCUPATION_TYPE,What kind of occupation does the client have,
+REGION_RATING_CLIENT_W_CITY,"Our rating of the region where client lives with taking city into account (1,2,3)",
+ORGANIZATION_TYPE,Type of organization where client works,
+EXT_SOURCE_2,Normalized score from external data source,normalized
+EXT_SOURCE_3,Normalized score from external data source,normalized
+DEF_60_CNT_SOCIAL_CIRCLE,How many observation of client's social surroundings defaulted on 60 (days past due) DPD,
+DAYS_LAST_PHONE_CHANGE,How many days before application did client change phone,
+
+
+# CHATGPT SUGGESTIONS FOR TOP FEATURES
+EXT_SOURCE_2, EXT_SOURCE_3 → external risk scores; usually the strongest predictors,
+DAYS_BIRTH (Age) → younger clients historically have higher default risk,
+AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE → loan size, repayment burden, and ratio features (credit/goods, annuity/credit),
+AMT_INCOME_TOTAL + ratios with credit → affordability and debt load relative to income,
+DAYS_EMPLOYED → stability of employment; very short or very long values matter,
+REGION_RATING_CLIENT / REGION_RATING_CLIENT_W_CITY → region-level socioeconomic proxy,
+OBS_30/60 & DEF_30/60_CNT_SOCIAL_CIRCLE → defaults in the client’s social network are strong behavioral proxies,
+CNT_CHILDREN, CNT_FAM_MEMBERS → family size as financial pressure.
+NAME_INCOME_TYPE, NAME_EDUCATION_TYPE, NAME_FAMILY_STATUS, NAME_HOUSING_TYPE → socioeconomic descriptors, help capture segments.
+OCCUPATION_TYPE, ORGANIZATION_TYPE → type of job/employer, signals income stability.
+DAYS_REGISTRATION, DAYS_ID_PUBLISH, DAYS_LAST_PHONE_CHANGE → recency of ID/phone changes can flag instability.
+Credit bureau request features (AMT_REQ_CREDIT_BUREAU_*: HOUR, DAY, WEEK, MON, QRT, YEAR) → recent inquiries are good predictors of credit hunger and correlate with higher risk.
+FLAG_OWN_CAR, FLAG_OWN_REALTY → asset ownership, modest predictors.
+WEEKDAY_APPR_PROCESS_START, HOUR_APPR_PROCESS_START → weak on their own, but models may pick up patterns.

@@ -1,0 +1,9 @@
+Date to Income Ratio Analysis
+===========================
+This analysis explores the relationship between the date of a transaction and the income ratio associated with that transaction.
+ The goal is to identify any patterns or trends that may exist over time.
+
+============================
+SHAP Analysis
+============================
+SHAP (SHapley Additive exPlanations) values are used to explain the output of machine learning models. In this analysis, SHAP values help to understand the impact of different features on the income ratio predictions.

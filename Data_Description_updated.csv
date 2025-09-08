@@ -2,7 +2,7 @@ Variable Name,Description,Special
 TARGET,"Target variable (1 - client with payment difficulties: he/she had late payment more than X days on at least one of the first Y installments of the loan in our sample, 0 - all other cases)",
 NAME_CONTRACT_TYPE,Identification if loan is cash or revolving,
 NAME_CONTRACT_TYPE,"Contract product type (Cash loan, consumer loan [POS] ,...) of the previous application",
-CODE_GENDER,Gender of the client,
+CODE_GENDER,Gender of the client, - protected attribute
 FLAG_OWN_CAR,Flag if the client owns a car,
 FLAG_OWN_REALTY,Flag if client owns a house or flat,
 CNT_CHILDREN,Number of children the client has,
